@@ -16,12 +16,21 @@ pub struct TopicOverview {
     last_area: Rect,
     opened_topics: HashSet<String>,
     selected_topic: Option<String>,
+    searched_topic: Option<Vec<String>>,
     state: TreeState,
 }
 
 impl TopicOverview {
     pub const fn get_opened(&self) -> &HashSet<String> {
         &self.opened_topics
+    }
+
+    pub fn set_opened(&mut self, new_data: &Vec<String>) {
+        // self.opened_topics.clear();
+        self.searched_topic = Some(new_data.clone());
+        for i in new_data {
+            self.opened_topics.insert(i.to_string());
+        }
     }
 
     pub const fn get_selected(&self) -> &Option<String> {
@@ -91,7 +100,10 @@ impl TopicOverview {
 
     pub fn open(&mut self) {
         if let Some(topic) = &self.selected_topic {
-            self.opened_topics.insert(topic.clone());
+            if "gps/v1/l/867378033978818".contains(topic) {
+                // print!("{}", topic);
+                self.opened_topics.insert(topic.clone());
+            }
         }
     }
 

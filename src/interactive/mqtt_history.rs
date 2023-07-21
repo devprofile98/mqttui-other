@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Local};
+use ego_tree::iter::Edge;
 use ego_tree::{NodeId, NodeRef, Tree};
 use rumqttc::Publish;
 use tui::style::{Color, Modifier, Style};
@@ -76,6 +77,40 @@ impl MqttHistory {
             self.ids.insert(topic.to_string(), parent);
             parent
         }
+    }
+
+    pub fn search(&self, search_word: &str) -> Vec<String> {
+        let mut imei = String::new();
+        let mut res_vector = Vec::new();
+        for i in self.tree.root().traverse() {
+            match i {
+                Edge::Open(topic) => {
+                    if (*topic.value().leaf).contains(search_word) {
+                        imei = topic.value().leaf.to_string();
+                        res_vector.push(topic);
+                    }
+                }
+                Edge::Close(_) => {}
+            }
+        }
+        let mut results = Vec::new();
+        for res in res_vector {
+            let mut full_topic = vec![imei.to_string()];
+            let mut temp_res = res.clone();
+            loop {
+                if let Some(parent) = temp_res.parent() {
+                    if *parent.value().leaf == *"" {
+                        break;
+                    }
+                    full_topic.insert(0, parent.value().leaf.to_string());
+                    temp_res = parent;
+                } else {
+                    break;
+                }
+            }
+            results.push(full_topic.join("/"));
+        }
+        results
     }
 
     pub fn add(&mut self, packet: &Publish, time: DateTime<Local>) {
@@ -173,6 +208,7 @@ impl MqttHistory {
             .root()
             .children()
             .flat_map(|o| build_recursive(opened_topics, &[], o))
+            .filter(|i| "gps/v1/l/867378033978818".contains(i))
             .collect::<Vec<_>>()
     }
 
@@ -185,7 +221,11 @@ impl MqttHistory {
             let Topic { leaf, history } = node.value();
             let mut topic = prefix.to_vec();
             topic.push(leaf);
-
+            let must_show = if "gps/v1/l/867378033978818".contains(&topic.join("/")) {
+                true
+            } else {
+                false
+            };
             let entries_below = node
                 .children()
                 .map(|c| build_recursive(&topic, c))
@@ -222,7 +262,7 @@ impl MqttHistory {
                 messages_below,
                 messages: history.len(),
                 topics_below,
-                tree_item: TreeItem::new(text, children),
+                tree_item: TreeItem::new(text, children).visible(must_show),
             }
         }
 
@@ -232,6 +272,7 @@ impl MqttHistory {
             .children()
             .map(|o| build_recursive(&[], o))
             .collect::<Vec<_>>();
+
         let topics = children
             .iter()
             .map(|o| o.topics_below + usize::from(o.messages > 0))

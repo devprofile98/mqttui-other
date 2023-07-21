@@ -205,6 +205,13 @@ impl App {
         }
     }
 
+    fn search_for_word(&self) -> Vec<String> {
+        if let Ok(historylocked) = self.mqtt_thread.get_history() {
+            return historylocked.search("8818");
+        }
+        vec!["".to_owned()]
+    }
+
     #[allow(clippy::too_many_lines)]
     fn on_key(&mut self, key: KeyEvent) -> anyhow::Result<Refresh> {
         let refresh = match &self.focus {
@@ -295,6 +302,13 @@ impl App {
                     } else {
                         Refresh::Skip
                     }
+                }
+
+                KeyCode::Char('/') => {
+                    let temp = &self.search_for_word();
+                    print!("{:?} ", temp);
+                    self.topic_overview.set_opened(temp);
+                    Refresh::Update
                 }
                 _ => Refresh::Skip,
             },
@@ -516,6 +530,8 @@ where
                 Span::from(" Switch to JSON Payload  "),
                 Span::styled("Del", STYLE),
                 Span::from(" Clean retained  "),
+                Span::styled("/", STYLE),
+                Span::from(" Search"),
             ],
             ElementInFocus::JsonPayload => vec![
                 Span::styled("q", STYLE),
