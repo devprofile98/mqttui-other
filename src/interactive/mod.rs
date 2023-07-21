@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::stdout;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -205,11 +206,11 @@ impl App {
         }
     }
 
-    fn search_for_word(&self) -> Vec<String> {
+    fn search_for_word(&self) -> HashSet<String> {
         if let Ok(historylocked) = self.mqtt_thread.get_history() {
-            return historylocked.search("8818");
+            return historylocked.search("0574");
         }
-        vec!["".to_owned()]
+        HashSet::new()
     }
 
     #[allow(clippy::too_many_lines)]
@@ -242,55 +243,55 @@ impl App {
                     Refresh::Update
                 }
                 KeyCode::Home => {
-                    let visible = self
-                        .mqtt_thread
-                        .get_history()?
-                        .get_visible_topics(self.topic_overview.get_opened());
+                    let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                        self.topic_overview.get_opened(),
+                        self.topic_overview.get_query_items(),
+                    );
                     self.topic_overview
                         .change_selected(&visible, CursorMove::Absolute(0));
                     Refresh::Update
                 }
                 KeyCode::End => {
-                    let visible = self
-                        .mqtt_thread
-                        .get_history()?
-                        .get_visible_topics(self.topic_overview.get_opened());
+                    let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                        self.topic_overview.get_opened(),
+                        self.topic_overview.get_query_items(),
+                    );
                     self.topic_overview
                         .change_selected(&visible, CursorMove::Absolute(usize::MAX));
                     Refresh::Update
                 }
                 KeyCode::PageUp => {
-                    let visible = self
-                        .mqtt_thread
-                        .get_history()?
-                        .get_visible_topics(self.topic_overview.get_opened());
+                    let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                        self.topic_overview.get_opened(),
+                        self.topic_overview.get_query_items(),
+                    );
                     self.topic_overview
                         .change_selected(&visible, CursorMove::PageUp);
                     Refresh::Update
                 }
                 KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    let visible = self
-                        .mqtt_thread
-                        .get_history()?
-                        .get_visible_topics(self.topic_overview.get_opened());
+                    let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                        self.topic_overview.get_opened(),
+                        self.topic_overview.get_query_items(),
+                    );
                     self.topic_overview
                         .change_selected(&visible, CursorMove::PageUp);
                     Refresh::Update
                 }
                 KeyCode::PageDown => {
-                    let visible = self
-                        .mqtt_thread
-                        .get_history()?
-                        .get_visible_topics(self.topic_overview.get_opened());
+                    let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                        self.topic_overview.get_opened(),
+                        self.topic_overview.get_query_items(),
+                    );
                     self.topic_overview
                         .change_selected(&visible, CursorMove::PageDown);
                     Refresh::Update
                 }
                 KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    let visible = self
-                        .mqtt_thread
-                        .get_history()?
-                        .get_visible_topics(self.topic_overview.get_opened());
+                    let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                        self.topic_overview.get_opened(),
+                        self.topic_overview.get_query_items(),
+                    );
                     self.topic_overview
                         .change_selected(&visible, CursorMove::PageDown);
                     Refresh::Update
@@ -306,7 +307,6 @@ impl App {
 
                 KeyCode::Char('/') => {
                     let temp = &self.search_for_word();
-                    print!("{:?} ", temp);
                     self.topic_overview.set_opened(temp);
                     Refresh::Update
                 }
@@ -361,10 +361,10 @@ impl App {
     fn on_up(&mut self) -> anyhow::Result<Refresh> {
         match self.focus {
             ElementInFocus::TopicOverview => {
-                let visible = self
-                    .mqtt_thread
-                    .get_history()?
-                    .get_visible_topics(self.topic_overview.get_opened());
+                let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                    self.topic_overview.get_opened(),
+                    self.topic_overview.get_query_items(),
+                );
                 self.topic_overview
                     .change_selected(&visible, CursorMove::OneUp);
             }
@@ -381,10 +381,10 @@ impl App {
     fn on_down(&mut self) -> anyhow::Result<Refresh> {
         match self.focus {
             ElementInFocus::TopicOverview => {
-                let visible = self
-                    .mqtt_thread
-                    .get_history()?
-                    .get_visible_topics(self.topic_overview.get_opened());
+                let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                    self.topic_overview.get_opened(),
+                    self.topic_overview.get_query_items(),
+                );
                 self.topic_overview
                     .change_selected(&visible, CursorMove::OneDown);
             }
@@ -400,10 +400,10 @@ impl App {
 
     fn on_click(&mut self, column: u16, row: u16) -> anyhow::Result<Refresh> {
         if let Some(index) = self.topic_overview.index_of_click(column, row) {
-            let visible = self
-                .mqtt_thread
-                .get_history()?
-                .get_visible_topics(self.topic_overview.get_opened());
+            let visible = self.mqtt_thread.get_history()?.get_visible_topics(
+                self.topic_overview.get_opened(),
+                self.topic_overview.get_query_items(),
+            );
             let changed = self
                 .topic_overview
                 .change_selected(&visible, CursorMove::Absolute(index));
@@ -493,7 +493,8 @@ impl App {
                 }
             });
 
-        let (topic_amount, tree_items) = history.to_tree_items();
+        let (topic_amount, tree_items) =
+            history.to_tree_items(self.topic_overview.get_query_items());
         self.topic_overview.ensure_state(&history);
         self.topic_overview.draw(
             f,
@@ -530,7 +531,7 @@ where
                 Span::from(" Switch to JSON Payload  "),
                 Span::styled("Del", STYLE),
                 Span::from(" Clean retained  "),
-                Span::styled("/", STYLE),
+                Span::styled(" / ", STYLE),
                 Span::from(" Search"),
             ],
             ElementInFocus::JsonPayload => vec![

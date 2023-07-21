@@ -16,7 +16,7 @@ pub struct TopicOverview {
     last_area: Rect,
     opened_topics: HashSet<String>,
     selected_topic: Option<String>,
-    searched_topic: Option<Vec<String>>,
+    searched_topic: Option<HashSet<String>>,
     state: TreeState,
 }
 
@@ -25,12 +25,12 @@ impl TopicOverview {
         &self.opened_topics
     }
 
-    pub fn set_opened(&mut self, new_data: &Vec<String>) {
-        // self.opened_topics.clear();
+    pub const fn get_query_items(&self) -> &Option<HashSet<String>> {
+        &self.searched_topic
+    }
+
+    pub fn set_opened(&mut self, new_data: &HashSet<String>) {
         self.searched_topic = Some(new_data.clone());
-        for i in new_data {
-            self.opened_topics.insert(i.to_string());
-        }
     }
 
     pub const fn get_selected(&self) -> &Option<String> {
@@ -100,8 +100,10 @@ impl TopicOverview {
 
     pub fn open(&mut self) {
         if let Some(topic) = &self.selected_topic {
-            if "gps/v1/l/867378033978818".contains(topic) {
-                // print!("{}", topic);
+            if "gps/v1".contains(topic)
+                || topic.contains("gps/v1")
+                || "gps/v1/e/867378033978818123".contains(topic)
+            {
                 self.opened_topics.insert(topic.clone());
             }
         }

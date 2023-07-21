@@ -79,7 +79,7 @@ impl MqttHistory {
         }
     }
 
-    pub fn search(&self, search_word: &str) -> Vec<String> {
+    pub fn search(&self, search_word: &str) -> HashSet<String> {
         let mut imei = String::new();
         let mut res_vector = Vec::new();
         for i in self.tree.root().traverse() {
@@ -93,7 +93,7 @@ impl MqttHistory {
                 Edge::Close(_) => {}
             }
         }
-        let mut results = Vec::new();
+        let mut results = HashSet::new();
         for res in res_vector {
             let mut full_topic = vec![imei.to_string()];
             let mut temp_res = res.clone();
@@ -108,7 +108,7 @@ impl MqttHistory {
                     break;
                 }
             }
-            results.push(full_topic.join("/"));
+            results.insert(full_topic.join("/"));
         }
         results
     }
@@ -181,11 +181,16 @@ impl MqttHistory {
         build_recursive(&prefix, noderef)
     }
 
-    pub fn get_visible_topics(&self, opened_topics: &HashSet<String>) -> Vec<String> {
+    pub fn get_visible_topics(
+        &self,
+        opened_topics: &HashSet<String>,
+        query_items: &Option<HashSet<String>>,
+    ) -> Vec<String> {
         fn build_recursive(
             opened_topics: &HashSet<String>,
             prefix: &[&str],
             node: NodeRef<Topic>,
+            query_items: &Option<HashSet<String>>,
         ) -> Vec<String> {
             let mut topic = prefix.to_vec();
             topic.push(&node.value().leaf);
@@ -195,7 +200,7 @@ impl MqttHistory {
             if opened_topics.contains(&topic_string) {
                 let mut entries_below = node
                     .children()
-                    .flat_map(|c| build_recursive(opened_topics, &topic, c))
+                    .flat_map(|c| build_recursive(opened_topics, &topic, c, query_items))
                     .collect::<Vec<_>>();
                 entries_below.insert(0, topic_string);
                 entries_below
@@ -204,31 +209,45 @@ impl MqttHistory {
             }
         }
 
-        self.tree
+        let res = self
+            .tree
             .root()
             .children()
-            .flat_map(|o| build_recursive(opened_topics, &[], o))
-            .filter(|i| "gps/v1/l/867378033978818".contains(i))
-            .collect::<Vec<_>>()
+            .flat_map(|o| build_recursive(opened_topics, &[], o, query_items));
+        if let Some(hash) = query_items.as_ref() {
+            return res
+                .filter(|i| {
+                    hash.into_iter()
+                        .map(|j| j.contains(i) || i.starts_with(j))
+                        .reduce(|acc, x| acc || x)
+                        .unwrap_or(false)
+                })
+                .collect::<Vec<_>>();
+        }
+        res.collect::<Vec<_>>()
     }
 
     /// Returns (`topic_amount`, `TreeItem`s)
-    pub fn to_tree_items(&self) -> (usize, Vec<TreeItem>) {
+    pub fn to_tree_items(&self, query_items: &Option<HashSet<String>>) -> (usize, Vec<TreeItem>) {
         fn build_recursive<'a>(
             prefix: &[&str],
             node: NodeRef<'a, Topic>,
+            query_items: &Option<HashSet<String>>,
         ) -> RecursiveTreeItemGenerator<'a> {
             let Topic { leaf, history } = node.value();
             let mut topic = prefix.to_vec();
             topic.push(leaf);
-            let must_show = if "gps/v1/l/867378033978818".contains(&topic.join("/")) {
-                true
-            } else {
-                false
-            };
+            let mut must_show = true;
+            if let Some(hash) = query_items.as_ref() {
+                must_show = hash
+                    .into_iter()
+                    .map(|i| i.contains(&topic.join("/")) || topic.join("/").starts_with(i))
+                    .reduce(|acc, x| acc || x)
+                    .unwrap_or(false);
+            }
             let entries_below = node
                 .children()
-                .map(|c| build_recursive(&topic, c))
+                .map(|c| build_recursive(&topic, c, query_items))
                 .collect::<Vec<_>>();
             let messages_below = entries_below
                 .iter()
@@ -270,7 +289,7 @@ impl MqttHistory {
             .tree
             .root()
             .children()
-            .map(|o| build_recursive(&[], o))
+            .map(|o| build_recursive(&[], o, query_items))
             .collect::<Vec<_>>();
 
         let topics = children
@@ -331,7 +350,7 @@ fn topics_below_finds_itself_works() {
 #[test]
 fn visible_all_closed_works() {
     let opened_topics = HashSet::new();
-    let actual = MqttHistory::example().get_visible_topics(&opened_topics);
+    let actual = MqttHistory::example().get_visible_topics(&opened_topics, &Some(HashSet::new()));
     assert_eq!(actual, ["foo", "test"]);
 }
 
@@ -339,14 +358,14 @@ fn visible_all_closed_works() {
 fn visible_opened_works() {
     let mut opened_topics = HashSet::new();
     opened_topics.insert("foo".into());
-    let actual = MqttHistory::example().get_visible_topics(&opened_topics);
+    let actual = MqttHistory::example().get_visible_topics(&opened_topics, &Some(HashSet::new()));
     assert_eq!(actual, ["foo", "foo/bar", "foo/test", "test"]);
 }
 
 #[test]
 fn tree_items_works() {
     let example = MqttHistory::example();
-    let (topics, items) = example.to_tree_items();
+    let (topics, items) = example.to_tree_items(&Some(HashSet::new()));
     assert_eq!(topics, 3);
     dbg!(&items);
     assert_eq!(items.len(), 2);
