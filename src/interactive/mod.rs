@@ -21,6 +21,7 @@ use tui::text::{Span, Spans};
 use tui::widgets::Paragraph;
 use tui::Frame;
 use tui::{backend::CrosstermBackend, Terminal};
+use tui_textarea::TextArea;
 use tui_tree_widget::flatten;
 
 use crate::cli::Broker;
@@ -39,6 +40,7 @@ enum ElementInFocus {
     TopicOverview,
     JsonPayload,
     CleanRetainedPopup(String),
+    SearchMode,
 }
 
 enum Event {
@@ -174,15 +176,16 @@ where
     Ok(())
 }
 
-struct App {
+struct App<'a> {
     details: details::Details,
     focus: ElementInFocus,
     info_header: info_header::InfoHeader,
     mqtt_thread: mqtt_thread::MqttThread,
     topic_overview: topic_overview::TopicOverview,
+    search_box: TextArea<'a>,
 }
 
-impl App {
+impl<'a> App<'a> {
     fn new(broker: &Broker, mqtt_thread: mqtt_thread::MqttThread) -> Self {
         Self {
             details: details::Details::default(),
@@ -190,6 +193,7 @@ impl App {
             info_header: info_header::InfoHeader::new(broker),
             mqtt_thread,
             topic_overview: topic_overview::TopicOverview::default(),
+            search_box: TextArea::default(),
         }
     }
 
@@ -206,9 +210,9 @@ impl App {
         }
     }
 
-    fn search_for_word(&self) -> HashSet<String> {
+    fn search_for_word(&self, query: String) -> HashSet<String> {
         if let Ok(historylocked) = self.mqtt_thread.get_history() {
-            return historylocked.search("0574");
+            return historylocked.search(&query);
         }
         HashSet::new()
     }
@@ -306,8 +310,7 @@ impl App {
                 }
 
                 KeyCode::Char('/') => {
-                    let temp = &self.search_for_word();
-                    self.topic_overview.set_opened(temp);
+                    self.focus = ElementInFocus::SearchMode;
                     Refresh::Update
                 }
                 _ => Refresh::Skip,
@@ -354,6 +357,21 @@ impl App {
                 self.focus = ElementInFocus::TopicOverview;
                 Refresh::Update
             }
+            ElementInFocus::SearchMode => match key.code {
+                KeyCode::Esc => {
+                    self.focus = ElementInFocus::TopicOverview;
+                    Refresh::Update
+                }
+                KeyCode::Enter => {
+                    let temp = &self.search_for_word(self.search_box.lines()[0].clone());
+                    self.topic_overview.set_opened(temp);
+                    Refresh::Update
+                }
+                _ => {
+                    self.search_box.input(key);
+                    Refresh::Update
+                }
+            },
         };
         Ok(refresh)
     }
@@ -374,6 +392,7 @@ impl App {
                 self.details.json_view.key_up(&items);
             }
             ElementInFocus::CleanRetainedPopup(_) => self.focus = ElementInFocus::TopicOverview,
+            ElementInFocus::SearchMode => {}
         }
         Ok(Refresh::Update)
     }
@@ -394,6 +413,7 @@ impl App {
                 self.details.json_view.key_down(&items);
             }
             ElementInFocus::CleanRetainedPopup(_) => self.focus = ElementInFocus::TopicOverview,
+            ElementInFocus::SearchMode => {}
         }
         Ok(Refresh::Update)
     }
@@ -462,7 +482,7 @@ impl App {
             self.mqtt_thread.has_connection_err().unwrap(),
             self.topic_overview.get_selected(),
         );
-        draw_key_hints(f, key_hint_area, &self.focus);
+        draw_key_hints(&self, f, key_hint_area, &self.focus);
 
         let history = self.mqtt_thread.get_history()?;
 
@@ -512,7 +532,7 @@ impl App {
     }
 }
 
-fn draw_key_hints<B>(f: &mut Frame<B>, area: Rect, focus: &ElementInFocus)
+fn draw_key_hints<B>(app: &App, f: &mut Frame<B>, area: Rect, focus: &ElementInFocus)
 where
     B: Backend,
 {
@@ -522,31 +542,39 @@ where
         add_modifier: Modifier::BOLD,
         sub_modifier: Modifier::empty(),
     };
-    f.render_widget(
-        Paragraph::new(Spans::from(match focus {
-            ElementInFocus::TopicOverview => vec![
-                Span::styled("q", STYLE),
-                Span::from(" Quit  "),
-                Span::styled("Tab", STYLE),
-                Span::from(" Switch to JSON Payload  "),
-                Span::styled("Del", STYLE),
-                Span::from(" Clean retained  "),
-                Span::styled(" / ", STYLE),
-                Span::from(" Search"),
-            ],
-            ElementInFocus::JsonPayload => vec![
-                Span::styled("q", STYLE),
-                Span::from(" Quit  "),
-                Span::styled("Tab", STYLE),
-                Span::from(" Switch to Topics  "),
-            ],
-            ElementInFocus::CleanRetainedPopup(_) => vec![
-                Span::styled("Enter", STYLE),
-                Span::from(" Clean topic tree  "),
-                Span::styled("Any", STYLE),
-                Span::from(" Abort  "),
-            ],
-        })),
-        area,
-    );
+    if let ElementInFocus::SearchMode = focus {
+        f.render_widget(app.search_box.widget(), area);
+        return;
+    } else {
+        f.render_widget(
+            Paragraph::new(Spans::from(match focus {
+                ElementInFocus::TopicOverview => vec![
+                    Span::styled("q", STYLE),
+                    Span::from(" Quit  "),
+                    Span::styled("Tab", STYLE),
+                    Span::from(" Switch to JSON Payload  "),
+                    Span::styled("Del", STYLE),
+                    Span::from(" Clean retained  "),
+                    Span::styled(" / ", STYLE),
+                    Span::from(" Search"),
+                ],
+                ElementInFocus::JsonPayload => vec![
+                    Span::styled("q", STYLE),
+                    Span::from(" Quit  "),
+                    Span::styled("Tab", STYLE),
+                    Span::from(" Switch to Topics  "),
+                ],
+                ElementInFocus::CleanRetainedPopup(_) => vec![
+                    Span::styled("Enter", STYLE),
+                    Span::from(" Clean topic tree  "),
+                    Span::styled("Any", STYLE),
+                    Span::from(" Abort  "),
+                ],
+                _ => {
+                    vec![]
+                }
+            })),
+            area,
+        );
+    }
 }
