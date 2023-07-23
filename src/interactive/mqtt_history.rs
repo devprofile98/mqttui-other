@@ -79,7 +79,7 @@ impl MqttHistory {
         }
     }
 
-    pub fn search(&self, search_word: &str) -> HashSet<String> {
+    pub fn search(&self, search_word: &str) -> Option<HashSet<String>> {
         let mut imei = String::new();
         let mut res_vector = Vec::new();
         for i in self.tree.root().traverse() {
@@ -110,7 +110,10 @@ impl MqttHistory {
             }
             results.insert(full_topic.join("/"));
         }
-        results
+        if results.is_empty() {
+            return None;
+        }
+        Some(results)
     }
 
     pub fn add(&mut self, packet: &Publish, time: DateTime<Local>) {

@@ -210,11 +210,11 @@ impl<'a> App<'a> {
         }
     }
 
-    fn search_for_word(&self, query: String) -> HashSet<String> {
+    fn search_for_word(&self, query: String) -> Option<HashSet<String>> {
         if let Ok(historylocked) = self.mqtt_thread.get_history() {
             return historylocked.search(&query);
         }
-        HashSet::new()
+        None
     }
 
     #[allow(clippy::too_many_lines)]
@@ -363,9 +363,12 @@ impl<'a> App<'a> {
                     Refresh::Update
                 }
                 KeyCode::Enter => {
-                    let temp = &self.search_for_word(self.search_box.lines()[0].clone());
-                    self.topic_overview.set_opened(temp);
-                    Refresh::Update
+                    if let Some(temp) = &self.search_for_word(self.search_box.lines()[0].clone()) {
+                        self.topic_overview.set_opened(temp);
+                        self.focus = ElementInFocus::TopicOverview;
+                        return Ok(Refresh::Update);
+                    }
+                    Refresh::Skip
                 }
                 _ => {
                     self.search_box.input(key);
